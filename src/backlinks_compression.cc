@@ -31,62 +31,39 @@
 #include <stdint.h>
 #include <algorithm>
 #include <vector>
-#include <cstdio>
+#include <queue>
+#include <stack>
+#include <fstream>
+#include <iostream>
+#include <string>
 
 //
 // BitString
 //
-inline void BitString::Init(uint64_t length) {
+bool BitString::Input(const char *filename) {
+  std::ifstream ifs(filename, std::ios::binary);
+  if (!ifs) return false;
   data_.clear();
-  data_.resize((length + 63) >> 6, 0);
-  length_ = length;
-}
-
-inline void BitString::AppendBit(uint64_t val) {
-  uint64_t index = length_ >> 6;
-  uint64_t bit_pos = length_ & kBITMASK63;
-  if (!bit_pos) {
-    data_.push_back(val);
-  } else {
-    data_[index] |= val << bit_pos;
+  uint64_t d;
+  while (ifs.read((char *) &d, sizeof(uint64_t))) {
+    data_.push_back(d);
   }
-  ++length_;
+  length_ = (uint64_t) data_.size() * 64;
+  return !ifs.bad();
 }
 
-inline void BitString::AppendBitString(const BitString &bitstr) {
-  for (uint64_t i = 0; i < bitstr.get_length(); ++i) {
-    AppendBit(bitstr.GetBit(i));
+bool BitString::Output(const char *filename) {
+  std::ofstream ofs(filename, std::ios::binary);
+  if (!ofs) return false;
+  for (uint64_t i = 0; i < length_; i += 64) {
+    ofs.write((char *) &data_[i >> 6], sizeof(uint64_t));
   }
-}
-
-inline void BitString::SetBit(uint64_t pos, uint64_t val) {
-  uint64_t index = pos >> 6;
-  uint64_t bit_pos = pos & kBITMASK63;
-  data_[index] ^= ((data_[index] >> bit_pos & 1) ^ val) << bit_pos;
-}
-
-inline int BitString::GetBit(uint64_t pos) const {
-  uint64_t index = pos >> 6;
-  uint64_t bit_pos = pos & kBITMASK63;
-  return (data_[index] >> bit_pos & 1);
-}
-
-inline void BitString::print() {
-  for (uint64_t i = 0; i < length_; ++i) std::printf("%d", GetBit(i));
+  return ofs.good();
 }
 
 //
 // DeltaCode
 //
-inline int DeltaCode::CountBitLength(int val) {
-  int count = 0;
-  while (val) {
-    val >>= 1;
-    ++count;
-  }
-  return count;
-}
-
 void DeltaCode::EncodeInt(int val, BitString *out) {
   out->Init(0);
   int length_val = CountBitLength(val + 1) - 1;
@@ -98,15 +75,6 @@ void DeltaCode::EncodeInt(int val, BitString *out) {
   }
   for (int i = length_val - 1; i >= 0; --i) {
     out->AppendBit((val + 1) >> i & 1);
-  }
-}
-
-void DeltaCode::Encode(const std::vector<int> &in, BitString *out) {
-  out->Init(0);
-  BitString tmp;
-  for (uint64_t i = 0; i < in.size(); ++i) {
-    EncodeInt(in[i], &tmp);
-    out->AppendBitString(tmp);
   }
 }
 
@@ -131,25 +99,12 @@ int DeltaCode::DecodeNextInt(const BitString &in, uint64_t *i) {
     return val - 1;
 }
 
-int DeltaCode::DecodeInt(const BitString &in) {
-  uint64_t i = 0;
-  return DecodeNextInt(in, &i);
-}
-
-void DeltaCode::Decode(const BitString &in, std::vector<int> *out) {
-  out->clear();
-  uint64_t i = 0;
-  while (i < in.get_length()) {
-    out->push_back(DecodeNextInt(in, &i));
-  }
-}
-
 //
 // BacklinksCompression
 //
 void BacklinksCompression
 ::TransformToAdj(const std::vector<std::pair<int, int> > &edges,
-                 std::vector<std::vector<int> > *adj) {
+                 bool directed, std::vector<std::vector<int> > *adj) {
   int num_v = 0;
   for (uint64_t i = 0; i < edges.size(); ++i) {
     num_v = std::max(num_v, std::max(edges[i].first, edges[i].second) + 1);
@@ -157,6 +112,11 @@ void BacklinksCompression
   adj->resize(num_v);
   for (uint64_t i = 0; i < edges.size(); ++i) {
     adj->at(edges[i].first).push_back(edges[i].second);
+  }
+  if (!directed) {
+    for (uint64_t i = 0; i < edges.size(); ++i) {
+      adj->at(edges[i].second).push_back(edges[i].first);
+    }
   }
   for (int i = 0; i < num_v; ++i) {
     std::sort(adj->at(i).begin(), adj->at(i).end());
@@ -174,11 +134,25 @@ void BacklinksCompression
 }
 
 void BacklinksCompression
-::Compress(const std::vector<std::pair<int, int> > &edges, BitString *result) {
+::Compress(std::vector<std::pair<int, int> > edges, BitString *result) {
+  std::vector<int> order;
+  Order(edges, &order);
+  for (uint64_t i = 0; i < edges.size(); ++i) {
+    edges[i].first = order[edges[i].first];
+    edges[i].second = order[edges[i].second];
+  }
   std::vector<std::vector<int> > adj;
-  TransformToAdj(edges, &adj);
+  TransformToAdj(edges, true, &adj);
   int num_v = adj.size();
-  CompressVertexes(adj, num_v, result);
+  DeltaCode delta;
+  BitString tmp;
+  delta.EncodeInt(num_v, &tmp);
+  result->AppendBitString(tmp);
+  for (int i = 0; i < num_v; ++i) {
+    delta.EncodeInt(order[i], &tmp);
+    result->AppendBitString(tmp);
+  }
+  CompressVertexes(adj, result);
 }
 
 void BacklinksCompression
@@ -186,12 +160,14 @@ void BacklinksCompression
   DeltaCode delta;
   uint64_t cur = 0;
   int num_v = delta.DecodeNextInt(code, &cur);
+  std::vector<int> order(num_v);
+  for (int i = 0; i < num_v; ++i) {
+    order[delta.DecodeNextInt(code, &cur)] = i;
+  }
   std::vector<std::vector<int> > adj(num_v);
-  
   for (int i = 0; i < num_v; ++i) {
     int j = i - delta.DecodeNextInt(code, &cur);
     if (code.GetBit(cur++)) adj[i].push_back(i);
-    
     // copying
     if (i != j) {
       for (int k = 0; k < adj[j].size(); ++k) {
@@ -201,7 +177,6 @@ void BacklinksCompression
         }
       }
     }
-    
     // residual
     int num_residual = delta.DecodeNextInt(code, &cur);
     if (num_residual != 0) {
@@ -213,9 +188,7 @@ void BacklinksCompression
         adj[i].push_back(now);
       }
     }
-    
-    sort(adj[i].begin(), adj[i].end());
-    
+    std::sort(adj[i].begin(), adj[i].end());
     // reciprocal
     for (int k = 0; k < adj[i].size(); ++k) {
       if (i >= adj[i][k]) continue;
@@ -224,35 +197,118 @@ void BacklinksCompression
       }
     }
   }
-  
   TransformToEdge(adj, edges);
+  for (uint64_t i = 0; i < edges->size(); ++i) {
+    edges->at(i).first = order[edges->at(i).first];
+    edges->at(i).second = order[edges->at(i).second];
+  }
+  std::sort(edges->begin(), edges->end());
 }
 
-// followings are private
-inline bool BacklinksCompression
-::Exist(const std::vector<std::vector<int> > &adj, int from, int to) {
-  return std::binary_search(adj[from].begin(), adj[from].end(), to);
-}
+class BacklinksCompression::Comp {
+ public:
+  Comp(const std::vector<int> &dist) : dist(dist) {}
+  bool operator()(int i, int j) { return dist[i] < dist[j];}
+  const std::vector<int> &dist;
+};
 
-inline void BacklinksCompression
-::ProceedCopying(const std::vector<std::vector<int> > &adj, int val,
-                 int now, int *cur, std::vector<int> *residual) {
-  while ((*cur) < adj[now].size() && adj[now][*cur] < val) {
-    if (!Exist(adj, adj[now][*cur], now) || now < adj[now][*cur]) {
-      residual->push_back(adj[now][*cur]);
+void BacklinksCompression
+::BDFSOrder(std::vector<std::vector<int> > adj,
+            std::vector<int> *order) {
+  int num_v = adj.size();
+  std::vector<int> dist(num_v, -1);
+  std::queue<int> q;
+  for (int i = 0; i < num_v; ++i) {
+    if (dist[i] != -1) continue;
+    dist[i] = 0;
+    q.push(i);
+    while (!q.empty()) {
+      int v = q.front(); q.pop();
+      for (int j = 0; j < adj[v].size(); ++j) {
+        int u = adj[v][j];
+        if (dist[u] != -1) continue;
+        dist[u] = dist[v] + 1;
+        q.push(u);
+      }
     }
-    ++(*cur);
+  }
+  Comp comp(dist);
+  for (int i = 0; i < num_v; ++i) std::sort(adj[i].begin(), adj[i].end(), comp);
+  std::vector<int> cur(num_v, -1);
+  int k = 0;
+  std::stack<int> st;
+  for (int i = 0; i < num_v; ++i) {
+    if (cur[i] != -1) continue;
+    st.push(i);
+    while (!st.empty()) {
+      int v = st.top(); st.pop();
+      if (cur[v] == -1) {
+        order->at(v) = k++;
+        cur[v] = 0;
+      }
+      while (cur[v] < adj[v].size()) {
+        int u = adj[v][cur[v]++];
+        if (cur[u] == -1) {
+          st.push(v);
+          st.push(u);
+          break;
+        }
+      }
+    }
+  }
+}
+
+void BacklinksCompression
+::BFSOrder(const std::vector<std::vector<int> > &adj, std::vector<int> *order) {
+  int num_v = adj.size();
+  std::queue<int> q;
+  int k = 0;
+  for (int i = 0; i < num_v; ++i) {
+    if (order->at(i) != -1) continue;
+    order->at(i) = k++;
+    q.push(i);
+    while (!q.empty()) {
+      int v = q.front();
+      q.pop();
+      for (int j = 0; j < adj[v].size(); ++j) {
+        int u = adj[v][j];
+        if (order->at(u) != -1) continue;
+        order->at(u) = k++;
+        q.push(u);
+      }
+    }
+  }
+}
+
+void BacklinksCompression
+::Order(const std::vector<std::pair<int, int> > &edges,
+        std::vector<int> *order) {
+  std::vector<std::vector<int> > adj;
+  TransformToAdj(edges, false, &adj);
+  int num_v = adj.size();
+  order->resize(num_v);
+  std::fill(order->begin(), order->end(), -1);
+  switch (kORDERING) {
+    case BFS: {
+      BFSOrder(adj, order);
+      break;
+    }
+    case BDFS: {
+      BDFSOrder(adj, order);
+      break;
+    }
+    default: {
+      for (int i = 0; i < num_v; ++i) order->at(i) = i;
+    }
   }
 }
 
 void BacklinksCompression
 ::CompressVertexes(const std::vector<std::vector<int> > &adj,
-                   int num_v, BitString *result) {
+                   BitString *result) {
+  int num_v = adj.size();
   DeltaCode delta;
   BitString tmp;
-  delta.EncodeInt(num_v, &tmp);
-  result->AppendBitString(tmp);
-  
   for (int i = 0; i < num_v; ++i) {
     BitString best;
     best.Init(0);
@@ -267,7 +323,6 @@ void BacklinksCompression
         now.AppendBit(0);
       }
       std::vector<int> residual;
-      
       // copying
       int cur = 0;
       if (i != j) {
@@ -282,7 +337,6 @@ void BacklinksCompression
         }
       }
       ProceedCopying(adj, num_v, i, &cur, &residual);
-      
       // residual
       delta.EncodeInt(residual.size(), &tmp);
       now.AppendBitString(tmp);
@@ -299,7 +353,6 @@ void BacklinksCompression
           now.AppendBitString(tmp);
         }
       }
-      
       // reciprocal
       for (int k = 0; k < adj[i].size(); ++k) {
         if (i >= adj[i][k]) continue;
@@ -309,11 +362,9 @@ void BacklinksCompression
           now.AppendBit(0);
         }
       }
-      
       // update best
       if (i == j || best.get_length() > now.get_length()) best = now;
     }
-    
     result->AppendBitString(best);
   }
 }

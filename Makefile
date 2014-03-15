@@ -1,28 +1,29 @@
 CXX = g++
 CXXFLAGS = -g -Wall -Wextra -Wno-sign-compare -O3
 
-HEADERS = src/backlinks_compression.h
-OBJECTS = $(subst .h,.o,$(HEADERS))
+SOURCES = src/backlinks_compression.h src/backlinks_compression.cc
 
 LIB = -lgtest -lgtest_main -lpthread
 GTEST_ROOT= lib/gtest-1.6.0
-JLOG_ROOT = lib/cpp-json-logger
 
-all: bin bin/test
+all: bin bin/compress bin/develop
+
+test: bin/test
 
 bin:
 	mkdir -p bin
-	
-.h.o:
-	$(CXX) -c $< 
 
-bin/test: src/backlinks_compression_test.cc src/backlinks_compression.cc ${HEADERS} 
-	$(CXX) $(CXXFLAGS) -o $@ $^ -I $(GTEST_ROOT)/include -L \
-	$(GTEST_ROOT)/lib $(LIB)
+bin/compress: samples/compress_main.cc ${SOURCES}
+	$(CXX) $(CXXFLAGS) -Isrc -o $@ $^
+
+bin/develop: samples/develop_main.cc ${SOURCES}
+	$(CXX) $(CXXFLAGS) -Isrc -o $@ $^
+
+bin/test: src/backlinks_compression_test.cc ${SOURCES} 
+	$(CXX) $(CXXFLAGS) -o $@ $^ -I $(GTEST_ROOT)/include -L $(GTEST_ROOT)/lib $(LIB)
 	./$@
 
 .PHONY:	test clean
 
 clean:
-	rm -r bin
-	rm src/*.o
+	rm -rf bin

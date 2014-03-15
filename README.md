@@ -3,11 +3,11 @@ Backlinks compression
 
 Backlinks compression is a graph compression scheme for real-world graphs.
 
-### From CUI Interface (yet)
+### From CUI Interface
 
     $ make
     $ bin/compress samples/graph_example.tsv output_file.dat
-    $ bin/develop samples/compressed_graph_example.dat output_file.tsv
+    $ bin/develop input_file.dat output_file.tsv
 
 * Execute `make` to build programs.
 * Execute `bin/compress` to compress a graph.
@@ -16,7 +16,7 @@ Backlinks compression is a graph compression scheme for real-world graphs.
 ### From Your Program
 
     BacklinksCompression bl;
-    std::vector<std::pair<int,int> > edge_list;
+    std::vector<std::pair<int, int> > edge_list;
     BitString compressed_graph;
     
     bl.Compress(edge_list, &compressed_graph);
