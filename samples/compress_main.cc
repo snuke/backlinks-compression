@@ -18,10 +18,13 @@ int main(int argc, char **argv) {
     cerr << "error: Load failed" << endl;
     exit(EXIT_FAILURE);
   }
+  cout << "edges      : " << edges.size() << endl;
   
   BacklinksCompression bl;
   BitString result;
   bl.Compress(edges, &result);
+  cout << "bit length : " << result.get_length() << endl;
+  cout << "bits/edge  : " << ((double)result.get_length()/edges.size()) << endl;
   
   if (!result.Output(argv[2])) {
     cerr << "error: Output failed" << endl;

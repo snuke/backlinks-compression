@@ -205,58 +205,7 @@ void BacklinksCompression
   std::sort(edges->begin(), edges->end());
 }
 
-class BacklinksCompression::Comp {
- public:
-  Comp(const std::vector<int> &dist) : dist(dist) {}
-  bool operator()(int i, int j) { return dist[i] < dist[j];}
-  const std::vector<int> &dist;
-};
 
-void BacklinksCompression
-::BDFSOrder(std::vector<std::vector<int> > adj,
-            std::vector<int> *order) {
-  int num_v = adj.size();
-  std::vector<int> dist(num_v, -1);
-  std::queue<int> q;
-  for (int i = 0; i < num_v; ++i) {
-    if (dist[i] != -1) continue;
-    dist[i] = 0;
-    q.push(i);
-    while (!q.empty()) {
-      int v = q.front(); q.pop();
-      for (int j = 0; j < adj[v].size(); ++j) {
-        int u = adj[v][j];
-        if (dist[u] != -1) continue;
-        dist[u] = dist[v] + 1;
-        q.push(u);
-      }
-    }
-  }
-  Comp comp(dist);
-  for (int i = 0; i < num_v; ++i) std::sort(adj[i].begin(), adj[i].end(), comp);
-  std::vector<int> cur(num_v, -1);
-  int k = 0;
-  std::stack<int> st;
-  for (int i = 0; i < num_v; ++i) {
-    if (cur[i] != -1) continue;
-    st.push(i);
-    while (!st.empty()) {
-      int v = st.top(); st.pop();
-      if (cur[v] == -1) {
-        order->at(v) = k++;
-        cur[v] = 0;
-      }
-      while (cur[v] < adj[v].size()) {
-        int u = adj[v][cur[v]++];
-        if (cur[u] == -1) {
-          st.push(v);
-          st.push(u);
-          break;
-        }
-      }
-    }
-  }
-}
 
 void BacklinksCompression
 ::BFSOrder(const std::vector<std::vector<int> > &adj, std::vector<int> *order) {
@@ -291,10 +240,6 @@ void BacklinksCompression
   switch (kORDERING) {
     case BFS: {
       BFSOrder(adj, order);
-      break;
-    }
-    case BDFS: {
-      BDFSOrder(adj, order);
       break;
     }
     default: {

@@ -36,8 +36,8 @@
 #include <cstdio>
 
 const int kWINDOW_WIDTH = 10;
-enum Ordering { BFS, BDFS, NONE };
-const Ordering kORDERING = NONE;
+enum Ordering { BFS, NONE };
+const Ordering kORDERING = BFS;
 
 //
 // BitString
@@ -87,9 +87,6 @@ class BacklinksCompression {
   void Develop(const BitString &code,
                std::vector<std::pair<int, int> > *edges);
  private:
-  class Comp;
-  void BDFSOrder(std::vector<std::vector<int> > adj,
-                 std::vector<int> *order);
   void BFSOrder(const std::vector<std::vector<int> > &adj,
                 std::vector<int> *order);
   void Order(const std::vector<std::pair<int, int> > &edges,
